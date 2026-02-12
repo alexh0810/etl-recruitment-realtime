@@ -1,0 +1,168 @@
+version: '3.8'
+
+services:
+  # ======================
+  # DATA SOURCES
+  # ======================
+
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    ports:
+      - '9042:9042'
+    environment:
+      CASSANDRA_CLUSTER_NAME: gotoro
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+      - ./data/raw:/opt/cassandra/import
+      - ./cassandra:/opt/cassandra/schema
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    ports:
+      - '3305:3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: dw
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  # ======================
+  # KAFKA
+  # ======================
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - '9092:9092'
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  # ======================
+  # AIRFLOW METADATA DB
+  # ======================
+
+  airflow-postgres:
+    image: postgres:15
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+
+  # ======================
+  # AIRFLOW WEBSERVER
+  # ======================
+
+  airflow-webserver:
+    build: ./airflow
+    image: airflow-with-docker:2.8.1
+    container_name: airflow-webserver
+    user: root
+    depends_on:
+      - airflow-postgres
+    ports:
+      - '8080:8080'
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW_CONN_SPARK_DEFAULT: spark://local
+
+      # 🔐 REQUIRED
+      AIRFLOW__WEBSERVER__SECRET_KEY: airflow-secret-key
+      AIRFLOW__CORE__FERNET_KEY: 4qzP3K6v1Q1Yw9R8sJx3A1yZ9z8m5r3p
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./spark:/opt/spark-apps
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    command: >
+      bash -c "
+      airflow db migrate &&
+      airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+      airflow webserver
+      "
+
+  # ======================
+  # AIRFLOW SCHEDULER
+  # ======================
+
+  airflow-scheduler:
+    build: ./airflow
+    image: airflow-with-docker:2.8.1
+    container_name: airflow-scheduler
+    user: root
+    depends_on:
+      - airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      AIRFLOW_CONN_SPARK_DEFAULT: spark://local
+
+      # 🔐 MUST MATCH WEBSERVER
+      AIRFLOW__WEBSERVER__SECRET_KEY: airflow-secret-key
+      AIRFLOW__CORE__FERNET_KEY: 4qzP3K6v1Q1Yw9R8sJx3A1yZ9z8m5r3p
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./spark:/opt/spark-apps
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    command: airflow scheduler
+
+  # ======================
+  # SPARK
+  # ======================
+
+  spark:
+    image: apache/spark:3.4.2
+    container_name: spark
+    user: root
+    ports:
+      - '4040:4040'
+    volumes:
+      - ./spark:/opt/spark-apps
+      - spark_ivy:/home/spark/.ivy2
+    environment:
+      SPARK_SUBMIT_OPTS: -Dspark.jars.ivy=/home/spark/.ivy2
+    command: >
+      bash -c "
+      mkdir -p /home/spark/.ivy2/cache &&
+      chown -R spark:spark /home/spark/.ivy2 &&
+      tail -f /dev/null
+      "
+
+  # ======================
+  # GRAFANA
+  # ======================
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - '3000:3000'
+
+# ======================
+# VOLUMES
+# ======================
+
+volumes:
+  cassandra_data:
+  mysql_data:
+  spark_ivy:

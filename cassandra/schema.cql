@@ -1,0 +1,35 @@
+CREATE KEYSPACE IF NOT EXISTS recruitment
+WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
+
+CREATE TABLE IF NOT EXISTS recruitment.tracking (
+  create_time text,
+  bid int,
+  bn text,
+  campaign_id int,
+  cd int,
+  custom_track text,
+  de text,
+  dl text,
+  dt text,
+  ed text,
+  ev int,
+  group_id int,
+  id text,
+  job_id int,
+  md text,
+  publisher_id int,
+  rl text,
+  sr text,
+  ts text,
+  tz int,
+  ua text,
+  uid text,
+  utm_campaign text,
+  utm_content text,
+  utm_medium text,
+  utm_source text,
+  utm_term text,
+  v int,
+  vp text,
+  PRIMARY KEY ((create_time))
+);
